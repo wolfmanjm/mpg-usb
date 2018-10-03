@@ -1,0 +1,37 @@
+Axis and speed
+
+The band switch is point-to-point
+
+Switch
+
+Emergency stop----normally open (press Disconnect)
+
+Enable---Normally closed   (press Connect )
+
+ 
+
+Line color definition
+
+colour signal
+
+red Vcc
+black GND
+green A
+white B
+purple A\
+purple\black B\
+yellow X
+yellow\black Y
+brown Z
+brown\black 4
+pink 5
+pink\black 6
+gray X1
+gray\black X10
+orange X100
+orange\black COM
+green\black L+
+white\black L-
+blue stop-c
+blue\black stop-cn
+ 
