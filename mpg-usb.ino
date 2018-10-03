@@ -26,8 +26,8 @@ const int ledPin = 6;
     It sends the multiplier which tells the host how much to move per event
     It sends the axis to move
     and it sends the encoder wheel data...
-    one byte tells the speed 1 to 100 where 100 is the fastest speed 1 is the slowest
-    one byte is the number of ticks the wheel moved since the last packet in case we miss some (it is probably one per packet though) it is plus or minus demending on the direction
+    one byte tells the speed 1 to 10 where 10 is the fastest speed 1 is the slowest
+    one byte is the number of ticks the wheel moved since the last packet in case we miss some (it is probably one per packet though) it is plus or minus depending on the direction
 */
 
 int lst_e = 0;
