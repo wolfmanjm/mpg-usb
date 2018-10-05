@@ -15,9 +15,25 @@
 
 #define MULT_1   9 // D9
 #define MULT_10  10 // D10
-#define MULT_100 11 // D11
+#define MULT_100 12 // D12
 
+
+#if defined(__AVR_ATmega32U4__)
+#define BOARD "Teensy 2.0"
+#define TEENSY2
+#elif defined(__AVR_AT90USB1286__)       
+#define BOARD "Teensy++ 2.0"
+#define TEENSY2PP
+#else
+#error "Unsupported board"
+#endif
+
+
+#ifdef TEENSY2PP
 const int ledPin = 6;
+#else
+const int ledPin = 11;
+#endif
 
 //extern volatile uint8_t usb_configuration;
 
