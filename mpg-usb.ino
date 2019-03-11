@@ -4,7 +4,42 @@
 
 //#define DEBUG 1
 
+
+#if defined(__AVR_ATmega32U4__)
+#define BOARD "Teensy 2.0"
+#define TEENSY2
+#elif defined(__AVR_AT90USB1286__)       
+#define BOARD "Teensy++ 2.0"
+#define TEENSY2PP
+#elif defined(__MKL26Z64__)       
+#define BOARD "Teensy LC"
+#define TEENSYLC
+#else
+#error "Unsupported board"
+#endif
+
+/*
+#elif defined(__MK20DX128__)       
+        #define BOARD "Teensy 3.0"
+#elif defined(__MK20DX256__)       
+        #define BOARD "Teensy 3.2" // and Teensy 3.1 (obsolete)
+#elif defined(__MK64FX512__)
+        #define BOARD "Teensy 3.5"
+#elif defined(__MK66FX1M0__)
+        #define BOARD "Teensy 3.6"
+*/
+
+#ifdef TEENSY2PP
+const int ledPin = 6;
+#elif defined(TEENSY2)
+const int ledPin = 11;
+#elif defined(TEENSYLC)
+const int ledPin = 13;
+#endif
+
+
 // Pins used
+#ifdef TEENSY2PP
 #define LE_ENCA  2 // D2 encoder pins
 #define LE_ENCB  3 // D3
 
@@ -16,23 +51,19 @@
 #define MULT_1   9 // D9
 #define MULT_10  10 // D10
 #define MULT_100 12 // D12
+#elif defined(TEENSY2)
+#define LE_ENCA  5 // D0 encoder pins
+#define LE_ENCB  6 // D1
 
+#define X_AXIS   7  // D2
+#define Y_AXIS   8  // D3
+#define Z_AXIS   9  // C6
+#define A_AXIS   10 // C7
 
-#if defined(__AVR_ATmega32U4__)
-#define BOARD "Teensy 2.0"
-#define TEENSY2
-#elif defined(__AVR_AT90USB1286__)       
-#define BOARD "Teensy++ 2.0"
-#define TEENSY2PP
-#else
-#error "Unsupported board"
-#endif
-
-
-#ifdef TEENSY2PP
-const int ledPin = 6;
-#else
-const int ledPin = 11;
+#define MULT_1   2 // B2
+#define MULT_10  3 // B3
+#define MULT_100 4 // B7
+#define LED      1 // B1
 #endif
 
 //extern volatile uint8_t usb_configuration;
@@ -67,12 +98,19 @@ void setup (void)
     pinMode(Z_AXIS, INPUT_PULLUP);
     pinMode(A_AXIS, INPUT_PULLUP);
 
-    pinMode(ledPin, OUTPUT);
+#ifdef LED
+	// Pendant led
+	pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW);
+#endif
+  // Teensy led
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, HIGH);
 
     last_time = micros();
 #ifdef DEBUG
     Serial.begin (115200);   // debugging
-    Serial.print("Starting...\r\n");
+    Serial.println("Starting...\r\n");
 #endif
 }  // end of setup
 
@@ -89,14 +127,23 @@ void loop (void)
     } else if(digitalReadFast(A_AXIS) == LOW) {
         axis= 4;
     } else {
-        #ifdef DEBUG
+        #if 1
         Serial.print(mintime); Serial.print(", ");
         Serial.print(maxtime); Serial.println("");
         #endif
+#ifdef LED
+        // Pendant led
+        digitalWrite(LED, LOW);
+#endif
         enc.write(0);
         lst_e= 0;
         return;
     }
+
+#ifdef LED
+  // Pendant led
+  digitalWrite(LED, HIGH);
+#endif
 
     byte mult = 1;
     if(digitalReadFast(MULT_1) == LOW) {
@@ -108,6 +155,11 @@ void loop (void)
     }
 
     int e = enc.read();
+#ifdef DEBUG
+    Serial.print(e); Serial.print(", ");
+    Serial.print(axis); Serial.print(", ");
+    Serial.print(mult); Serial.println("");
+#endif
     // we get the delta since the last read
     if(e != lst_e) {
         int d = e - lst_e;
@@ -152,5 +204,3 @@ void loop (void)
         }
     }
 }
-
-
