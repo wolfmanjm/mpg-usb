@@ -64,6 +64,7 @@ const int ledPin = 13;
 #define MULT_10  3 // B3
 #define MULT_100 4 // B7
 #define LED      1 // B1
+#define E_STOP    0 // B0
 #endif
 
 //extern volatile uint8_t usb_configuration;
@@ -81,6 +82,7 @@ int lst_e = 0;
 unsigned long last_time = 0;
 unsigned long maxtime= 100000; // after this we presume it is very slow
 unsigned long mintime= 4000; // fastest we can move is about 1ms
+byte last_estop= 0;
 byte buffer[64];
 
 Encoder enc(LE_ENCA, LE_ENCB);
@@ -96,16 +98,19 @@ void setup (void)
     pinMode(X_AXIS, INPUT_PULLUP);
     pinMode(Y_AXIS, INPUT_PULLUP);
     pinMode(Z_AXIS, INPUT_PULLUP);
-    pinMode(A_AXIS, INPUT_PULLUP);
+	pinMode(A_AXIS, INPUT_PULLUP);
+	
+	pinMode(E_STOP, INPUT_PULLUP);
+	last_estop= digitalReadFast(E_STOP) == LOW ? 0 : 1;
 
 #ifdef LED
 	// Pendant led
 	pinMode(LED, OUTPUT);
-  digitalWrite(LED, LOW);
+    digitalWrite(LED, LOW);
 #endif
-  // Teensy led
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, HIGH);
+	// Teensy led
+	pinMode(ledPin, OUTPUT);
+	digitalWrite(ledPin, HIGH);
 
     last_time = micros();
 #ifdef DEBUG
@@ -114,10 +119,56 @@ void setup (void)
 #endif
 }  // end of setup
 
+bool change= false;
+char s= 0;
+byte speed= 0;
+byte axis= 0;
+byte estop= 0;
+byte mult= 0;
+unsigned long t= 0;
+
 // main loop
 void loop (void)
 {
-    byte axis= 0;
+	if(change) {
+		change= false;
+		// send hid packet
+		buffer[0]= 0x12;
+		buffer[1]= 0x34;
+		buffer[2]= axis;
+		buffer[3]= mult;
+		buffer[4]= s;
+		buffer[5]= speed;
+		buffer[6]= estop;
+		// debug
+		buffer[7]= t>>24;
+		buffer[8]= t>>16;
+		buffer[9]= t>>8;
+		buffer[10]= t&0xFF;
+
+		int n = RawHID.send(buffer, 0);
+		if(n > 0) {
+			digitalWrite(ledPin, HIGH);
+		}else{
+			digitalWrite(ledPin, LOW);
+		}
+	}
+	
+	// normally low and goes high when latched
+	estop= digitalReadFast(E_STOP) == LOW ? 0 : 1;
+	if(last_estop != estop) {
+		last_estop= estop;
+		change= true;
+		return;
+	}
+
+	if(estop == 1) {
+		// Pendant led
+		digitalWrite(LED, LOW);
+		return;
+	}
+	
+	axis= 0;
     if(digitalReadFast(X_AXIS) == LOW) {
         axis= 1;
     } else if(digitalReadFast(Y_AXIS) == LOW) {
@@ -127,40 +178,36 @@ void loop (void)
     } else if(digitalReadFast(A_AXIS) == LOW) {
         axis= 4;
     } else {
-        #if 1
+        #if 0
         Serial.print(mintime); Serial.print(", ");
         Serial.print(maxtime); Serial.println("");
         #endif
-#ifdef LED
         // Pendant led
         digitalWrite(LED, LOW);
-#endif
         enc.write(0);
         lst_e= 0;
         return;
     }
 
-#ifdef LED
-  // Pendant led
-  digitalWrite(LED, HIGH);
-#endif
+    // Pendant led
+    digitalWrite(LED, HIGH);
 
-    byte mult = 1;
+    mult = 1;
     if(digitalReadFast(MULT_1) == LOW) {
         mult = 1;
     } else if(digitalReadFast(MULT_10) == LOW) {
         mult = 10;
     } else if(digitalReadFast(MULT_100) == LOW) {
         mult = 100;
-    }
-
+	}
+	
     int e = enc.read();
 #ifdef DEBUG
     Serial.print(e); Serial.print(", ");
     Serial.print(axis); Serial.print(", ");
     Serial.print(mult); Serial.println("");
 #endif
-    // we get the delta since the last read
+	// we get the delta since the last read
     if(e != lst_e) {
         int d = e - lst_e;
 
@@ -171,9 +218,8 @@ void loop (void)
             last_time = now;
 
             lst_e = e;
-            char s = d / 4; // get number of ticks (each detent is 4 ticks)
-            unsigned long t= (delta_us * abs(s));
-            byte speed;
+            s = d / 4; // get number of ticks (each detent is 4 ticks)
+            t= (delta_us * abs(s));
             if(t > maxtime) {
                 speed= 0;
             } else if(t <= mintime) {
@@ -181,26 +227,7 @@ void loop (void)
             } else {
                 speed= 50000 / t;
             }
-
-            // send hid packet
-            buffer[0]= 0x12;
-            buffer[1]= 0x34;
-            buffer[2]= axis;
-            buffer[3]= mult;
-            buffer[4]= s;
-            buffer[5]= speed;
-            // debug
-            buffer[7]= t>>24;
-            buffer[8]= t>>16;
-            buffer[9]= t>>8;
-            buffer[10]= t&0xFF;
-
-            int n = RawHID.send(buffer, 0);
-            if(n > 0) {
-                digitalWrite(ledPin, HIGH);
-            }else{
-                digitalWrite(ledPin, LOW);
-            }
+			change= true;
         }
-    }
+	}
 }
