@@ -8,10 +8,10 @@
 #if defined(__AVR_ATmega32U4__)
 #define BOARD "Teensy 2.0"
 #define TEENSY2
-#elif defined(__AVR_AT90USB1286__)       
+#elif defined(__AVR_AT90USB1286__)
 #define BOARD "Teensy++ 2.0"
 #define TEENSY2PP
-#elif defined(__MKL26Z64__)       
+#elif defined(__MKL26Z64__)
 #define BOARD "Teensy LC"
 #define TEENSYLC
 #else
@@ -19,9 +19,9 @@
 #endif
 
 /*
-#elif defined(__MK20DX128__)       
+#elif defined(__MK20DX128__)
         #define BOARD "Teensy 3.0"
-#elif defined(__MK20DX256__)       
+#elif defined(__MK20DX256__)
         #define BOARD "Teensy 3.2" // and Teensy 3.1 (obsolete)
 #elif defined(__MK64FX512__)
         #define BOARD "Teensy 3.5"
@@ -51,6 +51,15 @@ const int ledPin = 13;
 #define MULT_1   9 // D9
 #define MULT_10  10 // D10
 #define MULT_100 12 // D12
+#define E_STOP   1
+#define LED      13
+
+#define KBD_O1   28
+#define KBD_O2   29
+#define KBD_O3   30
+#define KBD_O4   31
+#define KBD_RDY   0
+
 #elif defined(TEENSY2)
 #define LE_ENCA  5 // D0 encoder pins
 #define LE_ENCB  6 // D1
@@ -64,7 +73,14 @@ const int ledPin = 13;
 #define MULT_10  3 // B3
 #define MULT_100 4 // B7
 #define LED      1 // B1
-#define E_STOP    0 // B0
+#define E_STOP   0 // B0
+
+#define KBD_O1   13 // B4
+#define KBD_O2   14 // B5
+#define KBD_O3   15 // B6
+#define KBD_O4   16 // F7
+#define KBD_RDY  18 // F5
+
 #endif
 
 //extern volatile uint8_t usb_configuration;
@@ -80,9 +96,9 @@ const int ledPin = 13;
 
 int lst_e = 0;
 unsigned long last_time = 0;
-unsigned long maxtime= 100000; // after this we presume it is very slow
-unsigned long mintime= 4000; // fastest we can move is about 1ms
-byte last_estop= 0;
+unsigned long maxtime = 100000; // after this we presume it is very slow
+unsigned long mintime = 4000; // fastest we can move is about 1ms
+byte last_estop = 0;
 byte buffer[64];
 
 Encoder enc(LE_ENCA, LE_ENCB);
@@ -98,19 +114,26 @@ void setup (void)
     pinMode(X_AXIS, INPUT_PULLUP);
     pinMode(Y_AXIS, INPUT_PULLUP);
     pinMode(Z_AXIS, INPUT_PULLUP);
-	pinMode(A_AXIS, INPUT_PULLUP);
-	
-	pinMode(E_STOP, INPUT_PULLUP);
-	last_estop= digitalReadFast(E_STOP) == LOW ? 0 : 1;
+    pinMode(A_AXIS, INPUT_PULLUP);
+
+    pinMode(E_STOP, INPUT_PULLUP);
+    last_estop = digitalReadFast(E_STOP) == LOW ? 0 : 1;
 
 #ifdef LED
-	// Pendant led
-	pinMode(LED, OUTPUT);
+    // Pendant led
+    pinMode(LED, OUTPUT);
     digitalWrite(LED, LOW);
 #endif
-	// Teensy led
-	pinMode(ledPin, OUTPUT);
-	digitalWrite(ledPin, HIGH);
+    // Teensy led
+    pinMode(ledPin, OUTPUT);
+    digitalWrite(ledPin, HIGH);
+
+    // keypad
+    pinMode(KBD_O1, INPUT);
+    pinMode(KBD_O2, INPUT);
+    pinMode(KBD_O3, INPUT);
+    pinMode(KBD_O4, INPUT);
+    pinMode(KBD_RDY, INPUT);
 
     last_time = micros();
 #ifdef DEBUG
@@ -119,73 +142,92 @@ void setup (void)
 #endif
 }  // end of setup
 
-bool change= false;
-char s= 0;
-byte speed= 0;
-byte axis= 0;
-byte estop= 0;
-byte mult= 0;
-unsigned long t= 0;
+bool change = false;
+char s = 0;
+byte speed = 0;
+byte axis = 0;
+byte estop = 0;
+byte mult = 0;
+unsigned long t = 0;
+bool keydown = false;
+byte button = 0;
 
 // main loop
 void loop (void)
 {
-	if(change) {
-		change= false;
-		// send hid packet
-		buffer[0]= 0x12;
-		buffer[1]= 0x34;
-		buffer[2]= axis;
-		buffer[3]= mult;
-		buffer[4]= s;
-		buffer[5]= speed;
-		buffer[6]= estop;
-		// debug
-		buffer[7]= t>>24;
-		buffer[8]= t>>16;
-		buffer[9]= t>>8;
-		buffer[10]= t&0xFF;
+    if(change) {
+        change = false;
+        // send hid packet
+        buffer[0] = 0x12;
+        buffer[1] = 0x34;
+        buffer[2] = axis;
+        buffer[3] = mult;
+        buffer[4] = s;
+        buffer[5] = speed;
+        buffer[6] = (button << 1) | estop; // bit 0 is estop, bits 1-7 are the macro button
 
-		int n = RawHID.send(buffer, 0);
-		if(n > 0) {
-			digitalWrite(ledPin, HIGH);
-		}else{
-			digitalWrite(ledPin, LOW);
-		}
-	}
-	
-	// normally low and goes high when latched
-	estop= digitalReadFast(E_STOP) == LOW ? 0 : 1;
-	if(last_estop != estop) {
-		last_estop= estop;
-		change= true;
-		return;
-	}
+        // debug send time between pulses
+        buffer[7] = t >> 24;
+        buffer[8] = t >> 16;
+        buffer[9] = t >> 8;
+        buffer[10] = t & 0xFF;
 
-	if(estop == 1) {
-		// Pendant led
-		digitalWrite(LED, LOW);
-		return;
-	}
-	
-	axis= 0;
-    if(digitalReadFast(X_AXIS) == LOW) {
-        axis= 1;
-    } else if(digitalReadFast(Y_AXIS) == LOW) {
-        axis= 2;
-    } else if(digitalReadFast(Z_AXIS) == LOW) {
-        axis= 3;
-    } else if(digitalReadFast(A_AXIS) == LOW) {
-        axis= 4;
+        int n = RawHID.send(buffer, 0);
+        if(n > 0) {
+            digitalWrite(ledPin, HIGH);
+        } else {
+            digitalWrite(ledPin, LOW);
+        }
+    }
+
+    // read keypad
+    if(digitalReadFast(KBD_RDY) == HIGH) {
+        if(!keydown) {
+            keydown= true;
+            button= (digitalReadFast(KBD_O4) << 3) | (digitalReadFast(KBD_O3) << 2) | (digitalReadFast(KBD_O2) << 1) | digitalReadFast(KBD_O1);
+            button += 1; // 0 is no button
+            change= true;
+        } else {
+            button= 0;
+        }
+
     } else {
-        #if 0
+        keydown= false;
+        button= 0;
+    }
+
+    // normally low and goes high when latched
+    estop = digitalReadFast(E_STOP) == LOW ? 0 : 1;
+    if(last_estop != estop) {
+        last_estop = estop;
+        change = true;
+        return;
+    }
+
+    if(estop == 1) {
+        // Pendant led
+        digitalWrite(LED, LOW);
+        return;
+    }
+
+    axis = 0;
+    if(digitalReadFast(X_AXIS) == LOW) {
+        axis = 1;
+    } else if(digitalReadFast(Y_AXIS) == LOW) {
+        axis = 2;
+    } else if(digitalReadFast(Z_AXIS) == LOW) {
+        axis = 3;
+    } else if(digitalReadFast(A_AXIS) == LOW) {
+        axis = 4;
+    } else {
+#if 0
         Serial.print(mintime); Serial.print(", ");
         Serial.print(maxtime); Serial.println("");
-        #endif
+#endif
         // Pendant led
         digitalWrite(LED, LOW);
         enc.write(0);
-        lst_e= 0;
+        lst_e = 0;
         return;
     }
 
@@ -199,15 +241,15 @@ void loop (void)
         mult = 10;
     } else if(digitalReadFast(MULT_100) == LOW) {
         mult = 100;
-	}
-	
+    }
+
     int e = enc.read();
 #ifdef DEBUG
     Serial.print(e); Serial.print(", ");
     Serial.print(axis); Serial.print(", ");
     Serial.print(mult); Serial.println("");
 #endif
-	// we get the delta since the last read
+    // we get the delta since the last read
     if(e != lst_e) {
         int d = e - lst_e;
 
@@ -219,15 +261,17 @@ void loop (void)
 
             lst_e = e;
             s = d / 4; // get number of ticks (each detent is 4 ticks)
-            t= (delta_us * abs(s));
+            t = (delta_us * abs(s));
             if(t > maxtime) {
-                speed= 0;
+                speed = 0;
             } else if(t <= mintime) {
-                speed= 10;
+                speed = 10;
             } else {
-                speed= 50000 / t;
+                speed = 50000 / t;
             }
-			change= true;
+            change = true;
         }
-	}
+    }
 }
+
+
